@@ -101,6 +101,7 @@ type overlayOptions struct {
 	skipMountHome     bool
 	mountOptions      string
 	ignoreChownErrors bool
+	squashmount       bool
 	forceMask         *os.FileMode
 }
 
@@ -549,6 +550,12 @@ func parseOptions(options []string) (*overlayOptions, error) {
 			if err != nil {
 				return nil, err
 			}
+		case "squashmount":
+			logrus.Debugf("overlay: squashmount=%s", val)
+			o.squashmount, err = strconv.ParseBool(val)
+			if err != nil {
+				return nil, err
+			}
 		case "force_mask":
 			logrus.Debugf("overlay: force_mask=%s", val)
 			var mask int64
@@ -709,6 +716,7 @@ func supportsOverlay(home string, homeMagic graphdriver.FsMagic, rootUID, rootGI
 			logrus.Debugf("Unable to create kernel-style whiteout: %v", err)
 			return supportsDType, fmt.Errorf("unable to create kernel-style whiteout: %w", err)
 		}
+		logrus.Debugf("Can support kernel style whiteout")
 
 		if len(flags) < unix.Getpagesize() {
 			err := unix.Mount("overlay", mergedDir, "overlay", 0, flags)
@@ -909,6 +917,7 @@ func (d *Driver) Create(id, parent string, opts *graphdriver.CreateOpts) (retErr
 func (d *Driver) create(id, parent string, opts *graphdriver.CreateOpts, disableQuota bool) (retErr error) {
 	dir := d.dir(id)
 
+	logrus.Debugf("Driver create function")
 	uidMaps := d.uidMaps
 	gidMaps := d.gidMaps
 
@@ -1117,6 +1126,7 @@ func (d *Driver) dir2(id string) (string, bool) {
 }
 
 func (d *Driver) getLowerDirs(id string) ([]string, error) {
+
 	var lowersArray []string
 	lowers, err := ioutil.ReadFile(path.Join(d.dir(id), lowerFile))
 	if err == nil {
@@ -1316,6 +1326,33 @@ func (d *Driver) Get(id string, options graphdriver.MountOpts) (_ string, retErr
 	return d.get(id, false, options)
 }
 
+func (d *Driver) mount_lower_squashfuse(archive string, mountpoint string) (_ string, retErr error) {
+	logrus.Debugf("mount_lower_squashfuse")
+
+	logrus.Debugf("squash archive: %s, squash_mount: %s", archive, mountpoint)
+
+	err := os.MkdirAll(mountpoint, 0700)
+	if err != nil {
+		logrus.Errorf("Could not make %s", mountpoint)
+		return "", err
+	}
+	mount_program := "/usr/bin/squashfuse"
+
+	var outb, errb bytes.Buffer
+	cmd := exec.Command(mount_program, archive, mountpoint)
+	cmd.Stdout = &outb
+	cmd.Stderr = &errb
+	err = cmd.Run()
+
+	if err != nil {
+		logrus.Errorf(errb.String())
+		logrus.Errorf("Could not mount archive successfully")
+		return "", err
+	}
+	logrus.Debugf(outb.String())
+	return mountpoint, nil
+}
+
 func (d *Driver) get(id string, disableShifting bool, options graphdriver.MountOpts) (_ string, retErr error) {
 	dir, inAdditionalStore := d.dir2(id)
 	if _, err := os.Stat(dir); err != nil {
@@ -1465,6 +1502,42 @@ func (d *Driver) get(id string, disableShifting bool, options graphdriver.MountO
 		absLowers = append(absLowers, path.Join(dir, "empty"))
 		relLowers = append(relLowers, path.Join(id, "empty"))
 	}
+
+	// Mount lower dir as a squash archive.
+	var lowerDirs string
+	lowerDirs = strings.Join(absLowers, ":")
+	logrus.Debugf("Lowerdir: %s", lowerDirs)
+	if d.options.squashmount == true {
+		var (
+			squash_ok    bool
+			squash_mount string
+			squash_dir   string
+		)
+		// squash file is named with the link name of the top layer plus ".squash"
+		toplayer := absLowers[0]
+		var archive string
+		archive = toplayer + ".squash"
+		_, err := os.Stat(archive)
+		if err != nil {
+			squash_ok = false
+		} else {
+			// Create the squash dir
+			squash_dir = path.Join(dir, "squashfs")
+			_mount, err := d.mount_lower_squashfuse(archive, squash_dir)
+			if err != nil {
+				logrus.Errorf("Could not mount squash archive %s", archive)
+				squash_ok = false
+			} else {
+				squash_mount = _mount
+				squash_ok = true
+			}
+		}
+		if squash_ok == true {
+			lowerDirs = squash_mount
+			logrus.Debugf("Changing lower dir to: %s", lowerDirs)
+		}
+	}
+
 	// user namespace requires this to move a directory from lower to upper.
 	rootUID, rootGID, err := idtools.GetRootUIDGID(d.uidMaps, d.gidMaps)
 	if err != nil {
@@ -1557,9 +1630,9 @@ func (d *Driver) get(id string, disableShifting bool, options graphdriver.MountO
 
 	var opts string
 	if readWrite {
-		opts = fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", strings.Join(absLowers, ":"), diffDir, workdir)
+		opts = fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", lowerDirs, diffDir, workdir)
 	} else {
-		opts = fmt.Sprintf("lowerdir=%s:%s", diffDir, strings.Join(absLowers, ":"))
+		opts = fmt.Sprintf("lowerdir=%s:%s", diffDir, lowerDirs)
 	}
 	if len(optsList) > 0 {
 		opts = fmt.Sprintf("%s,%s", opts, strings.Join(optsList, ","))
@@ -1606,9 +1679,9 @@ func (d *Driver) get(id string, disableShifting bool, options graphdriver.MountO
 		//FIXME: We need to figure out to get this to work with additional stores
 		if readWrite {
 			diffDir := path.Join(id, "diff")
-			opts = fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", strings.Join(relLowers, ":"), diffDir, workdir)
+			opts = fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", lowerDirs, diffDir, workdir)
 		} else {
-			opts = fmt.Sprintf("lowerdir=%s", strings.Join(relLowers, ":"))
+			opts = fmt.Sprintf("lowerdir=%s", lowerDirs)
 		}
 		if len(optsList) > 0 {
 			opts = fmt.Sprintf("%s,%s", opts, strings.Join(optsList, ","))
@@ -1646,6 +1719,7 @@ func (d *Driver) Put(id string) error {
 		return err
 	}
 	mountpoint := path.Join(dir, "merged")
+	squash_mount := path.Join(dir, "squashfs")
 	if count := d.ctr.Decrement(mountpoint); count > 0 {
 		return nil
 	}
@@ -1654,6 +1728,14 @@ func (d *Driver) Put(id string) error {
 	}
 
 	unmounted := false
+	unmount_squash := false
+
+	if d.options.squashmount == true {
+		_, err := os.Stat(squash_mount)
+		if err == nil {
+			unmount_squash = true
+		}
+	}
 
 	mappedRoot := filepath.Join(d.home, id, "mapped")
 	// It should not happen, but cleanup any mapped mount if it was leaked.
@@ -1677,8 +1759,18 @@ func (d *Driver) Put(id string) error {
 			}
 			if err == nil {
 				unmounted = true
+			}
+			if unmount_squash == true && unmounted == true {
+				err := exec.Command(v, "-u", squash_mount).Run()
+				if err != nil {
+					logrus.Debugf("Error unmounting %s filesytem %s - %v", squash_mount, v, err)
+				}
+			}
+
+			if unmounted == true {
 				break
 			}
+
 		}
 		// If fusermount|fusermount3 failed to unmount the FUSE file system, make sure all
 		// pending changes are propagated to the file system
@@ -1697,10 +1789,22 @@ func (d *Driver) Put(id string) error {
 		if err := unix.Unmount(mountpoint, unix.MNT_DETACH); err != nil && !os.IsNotExist(err) {
 			logrus.Debugf("Failed to unmount %s overlay: %s - %v", id, mountpoint, err)
 		}
+		if unmount_squash == true {
+			err := unix.Unmount(squash_mount, unix.MNT_DETACH)
+			if err != nil {
+				logrus.Debugf("Failed to unmount %s - %s", squash_mount, err)
+			}
+		}
 	}
 
 	if err := unix.Rmdir(mountpoint); err != nil && !os.IsNotExist(err) {
 		logrus.Debugf("Failed to remove mountpoint %s overlay: %s - %v", id, mountpoint, err)
+	}
+
+	if unmount_squash == true {
+		if err := unix.Rmdir(squash_mount); err != nil && !os.IsNotExist(err) {
+			logrus.Debugf("Failed to delete %s - %s", squash_mount, err)
+		}
 	}
 
 	return nil

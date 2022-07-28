@@ -97,6 +97,8 @@ type OverlayOptionsConfig struct {
 	Inodes string `toml:"inodes,omitempty"`
 	// Do not create a bind mount on the storage home
 	SkipMountHome string `toml:"skip_mount_home,omitempty"`
+	// mount image as a squash archive
+	SquashMount string `toml:"squashmount,omitempty"`
 	// ForceMask indicates the permissions mask (e.g. "0755") to use for new
 	// files and directories
 	ForceMask string `toml:"force_mask,omitempty"`
@@ -305,6 +307,11 @@ func GetGraphDriverOptions(driverName string, options OptionsConfig) []string {
 			doptions = append(doptions, fmt.Sprintf("%s.skip_mount_home=%s", driverName, options.Overlay.SkipMountHome))
 		} else if options.SkipMountHome != "" {
 			doptions = append(doptions, fmt.Sprintf("%s.skip_mount_home=%s", driverName, options.SkipMountHome))
+		}
+		if options.Overlay.SquashMount != "" {
+			doptions = append(doptions, fmt.Sprintf("%s.squashmount=%s", driverName, options.Overlay.SquashMount))
+		} else if options.Overlay.SquashMount == "" {
+			doptions = append(doptions, fmt.Sprintf("%s.squashmount=false", driverName))
 		}
 		if options.Overlay.ForceMask != "" {
 			doptions = append(doptions, fmt.Sprintf("%s.force_mask=%s", driverName, options.Overlay.ForceMask))
