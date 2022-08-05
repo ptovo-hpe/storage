@@ -1512,6 +1512,7 @@ func (d *Driver) get(id string, disableShifting bool, options graphdriver.MountO
 			squash_mount string
 			squash_dir   string
 		)
+		logrus.Debugf("ptovo - inside get")
 		// squash file is named with the link name of the top layer plus ".squash"
 		toplayer := absLowers[0]
 		var archive string
@@ -1522,6 +1523,7 @@ func (d *Driver) get(id string, disableShifting bool, options graphdriver.MountO
 		} else {
 			// Create the squash dir
 			squash_dir = path.Join(dir, "squashfs")
+			logrus.Debugf("squash_dir: %s", squash_dir)
 			_mount, err := d.mount_lower_squashfuse(archive, squash_dir)
 			if err != nil {
 				logrus.Errorf("Could not mount squash archive %s", archive)
