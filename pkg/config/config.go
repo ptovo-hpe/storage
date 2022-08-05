@@ -98,7 +98,7 @@ type OverlayOptionsConfig struct {
 	// Do not create a bind mount on the storage home
 	SkipMountHome string `toml:"skip_mount_home,omitempty"`
 	// mount image as a squash archive
-	SquashMount string `toml:"squashmount,omitempty"`
+	SquashMount string `toml:"squashmount"`
 	// ForceMask indicates the permissions mask (e.g. "0755") to use for new
 	// files and directories
 	ForceMask string `toml:"force_mask,omitempty"`

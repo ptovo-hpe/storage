@@ -364,7 +364,6 @@ func Init(home string, options graphdriver.Options) (graphdriver.Driver, error) 
 			return nil, fmt.Errorf("a network file system with user namespaces is not supported.  Please use a mount_program: %w", graphdriver.ErrIncompatibleFS)
 		}
 	}
-
 	var usingMetacopy bool
 	var supportsDType bool
 	var supportsVolatile *bool
@@ -1126,8 +1125,8 @@ func (d *Driver) dir2(id string) (string, bool) {
 }
 
 func (d *Driver) getLowerDirs(id string) ([]string, error) {
-
 	var lowersArray []string
+
 	lowers, err := ioutil.ReadFile(path.Join(d.dir(id), lowerFile))
 	if err == nil {
 		for _, s := range strings.Split(string(lowers), ":") {
@@ -1502,8 +1501,8 @@ func (d *Driver) get(id string, disableShifting bool, options graphdriver.MountO
 		absLowers = append(absLowers, path.Join(dir, "empty"))
 		relLowers = append(relLowers, path.Join(id, "empty"))
 	}
-
 	// Mount lower dir as a squash archive.
+
 	var lowerDirs string
 	lowerDirs = strings.Join(absLowers, ":")
 	logrus.Debugf("Lowerdir: %s", lowerDirs)
@@ -1547,7 +1546,6 @@ func (d *Driver) get(id string, disableShifting bool, options graphdriver.MountO
 	if err := idtools.MkdirAllAs(diffDir, perms, rootUID, rootGID); err != nil {
 		return "", err
 	}
-
 	mergedDir := path.Join(dir, "merged")
 	// Create the driver merged dir
 	if err := idtools.MkdirAs(mergedDir, 0700, rootUID, rootGID); err != nil && !os.IsExist(err) {
@@ -1730,13 +1728,6 @@ func (d *Driver) Put(id string) error {
 	unmounted := false
 	unmount_squash := false
 
-	if d.options.squashmount == true {
-		_, err := os.Stat(squash_mount)
-		if err == nil {
-			unmount_squash = true
-		}
-	}
-
 	mappedRoot := filepath.Join(d.home, id, "mapped")
 	// It should not happen, but cleanup any mapped mount if it was leaked.
 	if _, err := os.Stat(mappedRoot); err == nil {
@@ -1749,6 +1740,12 @@ func (d *Driver) Put(id string) error {
 		}
 	}
 
+	if d.options.squashmount == true {
+		_, err := os.Stat(squash_mount)
+		if err == nil {
+			unmount_squash = true
+		}
+	}
 	if d.options.mountProgram != "" {
 		// Attempt to unmount the FUSE mount using either fusermount or fusermount3.
 		// If they fail, fallback to unix.Unmount
