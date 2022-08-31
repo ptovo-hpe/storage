@@ -550,6 +550,7 @@ func parseOptions(options []string) (*overlayOptions, error) {
 				return nil, err
 			}
 		case "squashmount":
+			logrus.Debugf("hello ptovo inside parseOptions: squashmount=%s", val)
 			logrus.Debugf("overlay: squashmount=%s", val)
 			o.squashmount, err = strconv.ParseBool(val)
 			if err != nil {
