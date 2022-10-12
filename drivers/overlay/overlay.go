@@ -550,7 +550,7 @@ func parseOptions(options []string) (*overlayOptions, error) {
 				return nil, err
 			}
 		case "squashmount":
-			logrus.Debugf("hello ptovo inside parseOptions: squashmount=%s", val)
+			logrus.Debugf("hello ptovo in October inside parseOptions: squashmount=%s", val)
 			logrus.Debugf("overlay: squashmount=%s", val)
 			o.squashmount, err = strconv.ParseBool(val)
 			if err != nil {
@@ -1513,7 +1513,7 @@ func (d *Driver) get(id string, disableShifting bool, options graphdriver.MountO
 			squash_mount string
 			squash_dir   string
 		)
-		logrus.Debugf("ptovo - inside get")
+		logrus.Debugf("ptovo in October - inside get")
 		// squash file is named with the link name of the top layer plus ".squash"
 		toplayer := absLowers[0]
 		var archive string
